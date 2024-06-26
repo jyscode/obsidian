@@ -92,3 +92,138 @@ app.post('/signup', async (req, res) => {
 
 ```
 
+---
+
+### Passport
+
+
+- **strategy** 전략 : local , facebook, google 등의 인증 수단을 선택
+
+`app.get('/facebook', passport.authenticate('facebook'))`
+
+/facebook 경로는 사용자를 인증할 facebook으로 리디렉션
+
+
+```js
+passport.use(  
+    new localStrategy(  
+        {  
+            usernameField: 'userid',  
+            passwordField: 'userpw',  
+            session: true,  
+            passReqToCallback: 'false'  
+        },  
+        function (inputid, inputpw, done){  
+            mydb.collection('account')  
+                .findOne({userid: inputid})  
+                .then(result => {  
+                    if(result.userpw === inputpw) {  
+                        console.log('새로운 로그인')  
+                        done(null, result)  
+                    }  
+  
+                })  
+                .catch()  
+        }  
+    )  
+)
+```
+local의 경우에는 middleware로 등록해 둔 localStrategy를 사용하는 코드로 이동
+
+
+
+**- 로그인 세션 생성**
+
+```js
+passport.serializeUser(function (user, done) {  
+    console.log('serialize user')  
+    done(null, user.userid)  
+})
+```
+
+정상적으로 로그인이 되면 userid를 넣어준다.
+req.session.passport.user = {id: }
+
+
+```js
+passport.deserializeUser(function (userid, done) {  
+    mydb.collection('account')  
+        .findOne({userid: userid})  
+        .then(result => {  
+            console.log(result)  
+            done(null, result)  
+        })  
+        .catch()  
+})
+```
+
+유저가 페이지에 들어갈 때마다 deserializeUser 호출, serializeUser에서 넣은 userid를 이용하여 DB에서 해당 유저의 정보를 가져와 넣어준다.
+
+
+
+---
+
+### ID 중복 검사
+
+
+```js
+app.post("/signup",   (req, res) => {  
+    mydb  
+        .collection("account")  
+        .findOne({ userid: req.body.userid })  
+        .then(result => {  
+            console.log(result)  
+            if (result !== null){  
+                console.log('이미 존재하는 ID')  
+                res.redirect('/signup')  
+            }  
+            else {  
+                conn.connect()  
+                console.log(req.body);  
+  
+                // 16바이트 길이의 난수 생성 (32자리 16진수 문자열)  
+                const crypto = require("crypto");  
+                const generateSalt = (length = 16) => {  
+                    return crypto.randomBytes(length).toString("hex");  
+                };  
+  
+                const salt = generateSalt();  
+                console.log(`Generated salt: ${salt}`);  
+  
+                req.body.userpw = sha(req.body.userpw + salt);  
+                console.log(req.body.userpw);  
+  
+                mydb  
+                    .collection("account")  
+                    .insertOne(req.body)  
+                    .then((result) => {  
+                        console.log("회원가입 성공");  
+  
+                        // 삽입할 데이터  
+                        const data = { userid: req.body.userid, salt };  
+                        // SQL 쿼리  
+                        const sql = "INSERT INTO UserSalt (userid, salt) VALUES (?, ?)";  
+                        conn.query(sql, [data.userid, data.salt], (err, result) => {  
+                            if(err){  
+                                console.log(err)  
+                            }  
+                            else {  
+                                console.log("salt 저장 성공");  
+                            }  
+                        });  
+                    })  
+                    .catch((err) => {  
+                        console.log(err);  
+                    });  
+  
+                res.redirect("/");  
+            }  
+        })  
+        .catch(err => {  
+            console.log(err)  
+        })  
+  
+});
+```
+
+findOne함수를 사용하여 결과가 있다면 다시 회원가입 창으로 돌아가게 하였다.
